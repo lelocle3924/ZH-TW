@@ -109,9 +109,9 @@ export function OngoingChatScreen({ chatId, onBack }: OngoingChatScreenProps) {
       try {
         const profile = userProfile || (await getUserProfile());
         const systemPrompt = buildOngoingChatPrompt(
+          chat,
           profile.tocfl_level,
           profile.auto_adjust_level,
-          profile.estimated_level,
           profile.response_length,
           { name: profile.name, age: profile.age, aboutYou: profile.aboutYou },
         );
