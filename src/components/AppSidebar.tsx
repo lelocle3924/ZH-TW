@@ -34,6 +34,7 @@ interface AppSidebarProps {
 const ENGINE_LABELS: Record<TTSEngineType, string> = {
   voicevox: "VOICEVOX",
   sbv2: "Style-Bert-VITS2",
+  browser: "Browser",
 };
 
 type DotColor = "green" | "yellow" | "red" | "gray" | "pulse";

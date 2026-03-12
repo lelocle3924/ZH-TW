@@ -176,7 +176,7 @@ function SessionCard({
               <div className="flex items-baseline gap-2 flex-wrap">
                 <h3 className="font-medium text-sm">{session.scenario.title}</h3>
                 <span className="text-xs text-muted-foreground">
-                  {session.scenario.title_ja}
+                  {session.scenario.title_zh}
                 </span>
               </div>
 

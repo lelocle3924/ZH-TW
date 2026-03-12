@@ -94,9 +94,9 @@ export function ScenarioPicker({ onSelect }: ScenarioPickerProps) {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline gap-2 flex-wrap">
                           <h3 className="font-medium">{scenario.title}</h3>
-                          {scenario.title_ja && (
+                          {scenario.title_zh && (
                             <span className="text-sm text-muted-foreground">
-                              {scenario.title_ja}
+                              {scenario.title_zh}
                             </span>
                           )}
                         </div>
@@ -168,7 +168,7 @@ export function ScenarioPicker({ onSelect }: ScenarioPickerProps) {
                     <div className="flex items-baseline gap-2 flex-wrap">
                       <h3 className="font-medium">{scenario.title}</h3>
                       <span className="text-sm text-muted-foreground">
-                        {scenario.title_ja}
+                        {scenario.title_zh}
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">

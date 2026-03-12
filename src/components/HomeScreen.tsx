@@ -182,7 +182,7 @@ export function HomeScreen({
               {lastScenario ? (
                 <>
                   <p className="text-sm text-muted-foreground truncate mt-1">
-                    {lastScenario.scenario.title} · {lastScenario.scenario.title_ja}
+                    {lastScenario.scenario.title} · {lastScenario.scenario.title_zh}
                   </p>
                   <p className="text-xs text-muted-foreground mt-2">
                     {formatDistanceToNow(new Date(lastScenario.date), { addSuffix: true })}

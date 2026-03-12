@@ -246,7 +246,7 @@ export function FeedbackScreen({
               </Badge>
             </div>
             <p className="text-sm text-muted-foreground">
-              {scenario.title_ja} — {userMsgCount} exchanges
+              {scenario.title_zh} — {userMsgCount} exchanges
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
