@@ -1,0 +1,217 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  release:
+    types: [created]
+
+# Build and upload Tauri app for macOS, Windows, and Linux when a release is created
+
+jobs:
+  build-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS ARM (Apple Silicon M1+)
+          - platform: macos-14
+            args: --target aarch64-apple-darwin
+            rust_target: aarch64-apple-darwin
+            bindgen_target: aarch64-apple-darwin
+          # Linux x64
+          - platform: ubuntu-22.04
+            args: ""
+            rust_target: x86_64-unknown-linux-gnu
+            bindgen_target: x86_64-unknown-linux-gnu
+          # Windows x64
+          - platform: windows-latest
+            args: ""
+            rust_target: x86_64-pc-windows-msvc
+            bindgen_target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Validate updater signing secret (release only)
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "::error::Missing TAURI_SIGNING_PRIVATE_KEY repository secret."
+            exit 1
+          fi
+
+          KEY_CLEAN="$(printf '%s' "${TAURI_SIGNING_PRIVATE_KEY}" | tr -d '\r')"
+
+          decode_base64_portable() {
+            if printf '%s' "$1" | base64 --decode >/dev/null 2>&1; then
+              printf '%s' "$1" | base64 --decode
+              return 0
+            fi
+            if printf '%s' "$1" | base64 -d >/dev/null 2>&1; then
+              printf '%s' "$1" | base64 -d
+              return 0
+            fi
+            if printf '%s' "$1" | base64 -D >/dev/null 2>&1; then
+              printf '%s' "$1" | base64 -D
+              return 0
+            fi
+            return 1
+          }
+
+          # If the secret was pasted with literal \n characters, Tauri cannot parse it.
+          if printf '%s' "${KEY_CLEAN}" | grep -q '\\n'; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY contains literal \\n characters. Store it as real multi-line text."
+            echo "::error::Recommended: gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri-keys/tama-updater.key"
+            exit 1
+          fi
+
+          # Some setups accidentally save the entire key text as one base64 line.
+          # Decode it for validation if needed.
+          KEY_LINE1="$(printf '%s\n' "${KEY_CLEAN}" | sed -n '1p')"
+          if ! printf '%s' "${KEY_LINE1}" | grep -Eq '^untrusted comment: (mini|r)sign (encrypted )?secret key$'; then
+            if KEY_DECODED="$(decode_base64_portable "${KEY_CLEAN}")"; then
+              KEY_DECODED="$(printf '%s' "${KEY_DECODED}" | tr -d '\r')"
+              DECODED_LINE1="$(printf '%s\n' "${KEY_DECODED}" | sed -n '1p')"
+              if printf '%s' "${DECODED_LINE1}" | grep -Eq '^untrusted comment: (mini|r)sign (encrypted )?secret key$'; then
+                KEY_CLEAN="${KEY_DECODED}"
+              fi
+            fi
+          fi
+
+          LINE1="$(printf '%s\n' "${KEY_CLEAN}" | sed -n '1p' | sed -E 's/[[:space:]]+$//')"
+          PAYLOAD_COMPACT="$(printf '%s\n' "${KEY_CLEAN}" | sed '1d' | tr -d '[:space:]')"
+
+          # Some UIs/pastes collapse the key into a single line: "<header> <payload>"
+          if [ -z "${PAYLOAD_COMPACT}" ] && printf '%s' "${KEY_CLEAN}" | grep -Eq '^untrusted comment: (mini|r)sign (encrypted )?secret key[[:space:]]+[A-Za-z0-9+/=[:space:]]+$'; then
+            LINE1="$(printf '%s' "${KEY_CLEAN}" | sed -E 's/[[:space:]]+[A-Za-z0-9+/=[:space:]]+$//' | sed -E 's/[[:space:]]+$//')"
+            PAYLOAD_COMPACT="$(printf '%s' "${KEY_CLEAN}" | sed -E 's/^untrusted comment: (mini|r)sign (encrypted )?secret key[[:space:]]+//' | tr -d '[:space:]')"
+          fi
+
+          if ! printf '%s' "${LINE1}" | grep -Eq '^untrusted comment: (mini|r)sign (encrypted )?secret key$'; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY header line is invalid."
+            exit 1
+          fi
+
+          if [ -z "${PAYLOAD_COMPACT}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY payload line is missing."
+            exit 1
+          fi
+
+          # Catches copy/paste corruption like trailing '%' from shell prompts.
+          if ! printf '%s' "${PAYLOAD_COMPACT}" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY payload contains non-base64 characters."
+            exit 1
+          fi
+
+          if [ $(( ${#PAYLOAD_COMPACT} % 4 )) -ne 0 ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY payload has invalid base64 length."
+            exit 1
+          fi
+
+          # Tauri updater signing expects TAURI_SIGNING_PRIVATE_KEY to be the
+          # base64-encoded full key text (header + payload), like ~/.tauri-keys/*.key
+          KEY_CANONICAL_B64="$(
+            {
+              printf '%s\n' "${LINE1}"
+              printf '%s\n' "${PAYLOAD_COMPACT}"
+            } | base64 | tr -d '\r\n'
+          )"
+          echo "TAURI_SIGNING_PRIVATE_KEY=${KEY_CANONICAL_B64}" >> "$GITHUB_ENV"
+
+      # Linux dependencies
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libasound2-dev \
+            libclang-dev \
+            clang \
+            llvm
+          # llvm-config may be versioned (e.g. llvm-config-14) on Ubuntu 22.04
+          LLVM_CONFIG=$(which llvm-config 2>/dev/null || which llvm-config-14 2>/dev/null || echo "")
+          if [ -n "$LLVM_CONFIG" ]; then
+            echo "LIBCLANG_PATH=$($LLVM_CONFIG --libdir)" >> $GITHUB_ENV
+          else
+            echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
+          fi
+          echo "BINDGEN_EXTRA_CLANG_ARGS=--target=${{ matrix.bindgen_target }}" >> $GITHUB_ENV
+
+      # macOS: Use Xcode's libclang for whisper-rs bindgen (more stable than brew llvm)
+      - name: Configure Clang (macOS)
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          SDK_PATH=$(xcrun --sdk macosx --show-sdk-path)
+          XCODE_CLANG_LIB="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
+          test -f "${XCODE_CLANG_LIB}/libclang.dylib"
+          echo "LIBCLANG_PATH=${XCODE_CLANG_LIB}" >> $GITHUB_ENV
+          echo "SDKROOT=${SDK_PATH}" >> $GITHUB_ENV
+          # Tell bindgen to use the correct SDK and target architecture
+          echo "BINDGEN_EXTRA_CLANG_ARGS=-isysroot ${SDK_PATH} --target=${{ matrix.bindgen_target }}" >> $GITHUB_ENV
+          # Set MACOSX_DEPLOYMENT_TARGET to ensure consistent builds
+          echo "MACOSX_DEPLOYMENT_TARGET=10.15" >> $GITHUB_ENV
+
+      # Windows: Install LLVM/Clang for whisper-rs bindgen
+      - name: Install LLVM (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          choco install llvm -y
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+          echo "BINDGEN_EXTRA_CLANG_ARGS=--target=${{ matrix.bindgen_target }}" >> $env:GITHUB_ENV
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app (release upload)
+        if: github.event_name == 'release'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          LIBCLANG_PATH: ${{ env.LIBCLANG_PATH }}
+          SDKROOT: ${{ env.SDKROOT }}
+          BINDGEN_EXTRA_CLANG_ARGS: ${{ env.BINDGEN_EXTRA_CLANG_ARGS }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ env.MACOSX_DEPLOYMENT_TARGET }}
+        with:
+          releaseId: ${{ github.event.release.id }}
+          args: ${{ matrix.args }}
+
+      - name: Build Tauri app (manual preflight)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          LIBCLANG_PATH: ${{ env.LIBCLANG_PATH }}
+          SDKROOT: ${{ env.SDKROOT }}
+          BINDGEN_EXTRA_CLANG_ARGS: ${{ env.BINDGEN_EXTRA_CLANG_ARGS }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ env.MACOSX_DEPLOYMENT_TARGET }}
+        run: npm run tauri build -- ${{ matrix.args }}
