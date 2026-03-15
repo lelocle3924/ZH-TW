@@ -66,7 +66,8 @@ function ActivityGrid() {
           <span className="text-xs font-medium">Week {weekNumber}</span>
         </div>
         <div className="grid grid-cols-7 gap-2">
-          {["月", "火", "水", "木", "金", "土", "日"].map((d, i) => (
+          {/* Using traditional numerical format for Monday-Sunday */}
+          {["一", "二", "三", "四", "五", "六", "日"].map((d, i) => (
             <div key={i} className="text-[9px] text-center text-muted-foreground/60 leading-none mb-0.5">
               {d}
             </div>
@@ -102,13 +103,15 @@ function ActivityGrid() {
   );
 }
 
-function getGreetingJa(date: Date, name?: string): string {
+function getGreetingZh(date: Date, name?: string): string {
   const hour = date.getHours();
   const baseGreeting =
-    hour < 12 ? "おはようございます" :
-    hour < 18 ? "こんにちは" :
-    "こんばんは";
-  return name ? `${baseGreeting}、${name}さん` : baseGreeting;
+    hour < 12 ? "早安" :      // Good morning
+    hour < 18 ? "午安" :      // Good afternoon
+    "晚安";                   // Good evening
+  
+  // If a name is provided, format it like "Name, Good morning"
+  return name ? `${name}，${baseGreeting}` : baseGreeting; 
 }
 
 export function HomeScreen({
@@ -126,7 +129,7 @@ export function HomeScreen({
   } | null>(null);
   const [lastPersonaChat, setLastPersonaChat] = useState<OngoingChat | null>(null);
   const [profileName, setProfileName] = useState("");
-  const greetingJa = getGreetingJa(now, profileName);
+  const greetingZh = getGreetingZh(now, profileName);
 
   useEffect(() => {
     const tick = () => setNow(new Date());
@@ -162,7 +165,7 @@ export function HomeScreen({
       <div className="max-w-xl w-full space-y-4 py-4">
         {/* Header */}
         <div className="text-center">
-          <h1 className="text-3xl font-bold mb-2">{greetingJa}</h1>
+          <h1 className="text-3xl font-bold mb-2">{greetingZh}</h1>
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">

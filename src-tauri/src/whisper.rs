@@ -7,8 +7,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 const MODEL_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
-const MODEL_FILENAME: &str = "ggml-small.bin";
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin";
+const MODEL_FILENAME: &str = "ggml-large-v3-turbo.bin";
 
 pub struct WhisperModelState {
     pub context: Mutex<Option<Arc<WhisperContext>>>,
@@ -268,7 +268,7 @@ pub async fn transcribe_audio(
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect();
 
-    let lang = language.unwrap_or_else(|| "ja".to_string());
+    let lang = language.unwrap_or_else(|| "zh".to_string());
     log::info!(
         "Transcribing {} samples ({:.1}s) with language={}",
         audio_data.len(),
@@ -279,6 +279,7 @@ pub async fn transcribe_audio(
     tokio::task::spawn_blocking(move || {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_language(Some(&lang));
+        params.set_initial_prompt(Some("這是一段繁體中文的語音紀錄。請用繁體中文輸出。"));
         params.set_n_threads(4);
         params.set_print_progress(false);
         params.set_print_realtime(false);

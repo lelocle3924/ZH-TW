@@ -998,7 +998,7 @@ export function Settings() {
             {transcriptionEngine === "local" ? (
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">
-                  Runs entirely on your machine — free, fast, and fully offline. Requires a ~500 MB model download.
+                  Requires a ~800 MB model download (Traditional Chinese optimized).
                 </p>
 
                 {whisperStatus && (
