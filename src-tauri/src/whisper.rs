@@ -279,7 +279,7 @@ pub async fn transcribe_audio(
     tokio::task::spawn_blocking(move || {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_language(Some(&lang));
-        params.set_initial_prompt(Some("這是一段繁體中文的語音紀錄。請用繁體中文輸出。"));
+        params.set_initial_prompt("這是一段繁體中文的語音紀錄。請用繁體中文輸出。");
         params.set_n_threads(4);
         params.set_print_progress(false);
         params.set_print_realtime(false);
